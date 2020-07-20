@@ -9,6 +9,7 @@ knitr::opts_chunk$set(echo = TRUE)
 
 ```{r}
 library(dplyr)
+library(readxl)
 
 allrea <- read_excel("/Users/francopicone/Desktop/Data+/REA_ASR_3845_finalv2.xlsx")
 
@@ -19,19 +20,17 @@ allrea
 ```{r}
 allrea$latitude <- jitter(allrea$latitude)
 allrea$longitude <- jitter(allrea$longitude)
-allrea$zip <- formatC(allrea$zip, width=5, format="d", flag="0")
-row.names(allrea) <- allrea$system
+allrea$system <- formatC(allrea$system, width=5, format="d", flag="0")
 
 cleantable <- allrea %>%
   select(
-    County = county.x,
-    City = city.x,
-    State = state.x,
+    County = county,
+    City = city,
+    State = state,
     Zipcode = zip,
     System = system,
     Year = year,
     MilesEnergized = op_me,
-    kWhPerResidentialCustomerDecember = op_kwh_pr,
     CustomersPerMile = op_cpm,
     RevenuePerMile = op_rpm,
     kWhPerResidentialCustomer = kwh_per_cc1,
@@ -51,8 +50,7 @@ library(lattice)
 library(dplyr)
 
 # Leaflet bindings are a bit slow; for now we'll just sample to compensate
-set.seed(100)
-readata <- allrea[sample.int(nrow(allrea), 10000),]
+readata <- allrea
 # By ordering by centile, we ensure that the (comparatively rare) SuperZIPs
 # will be drawn last and thus be easier to see
 readata <- readata[order(readata$prop_score),]
@@ -73,7 +71,7 @@ function(input, output, session) {
 
   # A reactive expression that returns the set of zips that are
   # in bounds right now
-  zipsInBounds <- reactive({
+  systemInBounds <- reactive({
     if (is.null(input$map_bounds))
       return(readata[FALSE,])
     bounds <- input$map_bounds
@@ -90,10 +88,10 @@ function(input, output, session) {
 
   output$histps <- renderPlot({
     # If no zipcodes are in view, don't plot
-    if (nrow(zipsInBounds()) == 0)
+    if (nrow(systemInBounds()) == 0)
       return(NULL)
 
-    hist(zipsInBounds()$prop_score,
+    hist(systemInBounds()$prop_score,
       breaks = psBreaks,
       main = "Propensity score (visible zips)",
       xlab = "Propensity Score",
@@ -145,18 +143,22 @@ function(input, output, session) {
   
 # CODE FOR POPUP -- TRI Modify this
   # Show a popup at the given location
-  showZipcodePopup <- function(zipcode, lat, lng) {
-    selectedZip <- allzips[allzips$zipcode == zipcode,]
+  showSitePopup <- function(system, lat, lng) {
+    selectedSite <- allrea[allrea$system == system,]
     content <- as.character(tagList(
-      tags$h4("Score:", as.integer(selectedZip$centile)),
+      tags$h4("Score:", as.integer(selectedSite$prop_score)),
       tags$strong(HTML(sprintf("%s, %s %s",
-        selectedZip$city.x, selectedZip$state.x, selectedZip$zipcode
+        selectedSite$city.x, selectedSite$state.x, selectedSite$system
       ))), tags$br(),
-      sprintf("Median household income: %s", dollar(selectedZip$income * 1000)), tags$br(),
-      sprintf("Percent of adults with BA: %s%%", as.integer(selectedZip$college)), tags$br(),
-      sprintf("Adult population: %s", selectedZip$adultpop)
+      sprintf("kWh Consumed Per Customer: %s", selectedSite$kwh_per_cc1), tags$br(),
+      sprintf("Miles Energized: %s%", selectedSite$op_me), tags$br(),
+      sprintf("Customers Per Mile: %s%", selectedSite$op_cpm), tags$br(),
+      sprintf("Revenue Per Mile: %s%", selectedSite$op_rpm), tags$br(),
+      sprintf("Number of Farms: %s%", selectedSite$farms), tags$br(),
+      sprintf("Farm Population: %s%", selectedSite$farm_pop), tags$br(),
+      sprintf("Percent Farmland: %s%", selectedSite$plf)
     ))
-    leafletProxy("map") %>% addPopups(lng, lat, content, layerId = zipcode)
+    leafletProxy("map") %>% addPopups(lng, lat, content, layerId = system)
   }
 
   # When map is clicked, show a popup with city info
@@ -167,7 +169,7 @@ function(input, output, session) {
       return()
 
     isolate({
-      showZipcodePopup(event$id, event$lat, event$lng)
+      showSitePopup(event$id, event$lat, event$lng)
     })
   })
 
@@ -187,16 +189,16 @@ function(input, output, session) {
   })
 
   observe({
-    zipcodes <- if (is.null(input$states)) character(0) else {
+    systems <- if (is.null(input$states)) character(0) else {
       cleantable %>%
         filter(State %in% input$states,
           is.null(input$cities) | City %in% input$cities) %>%
-        `$`('Zipcode') %>%
+        `$`('System') %>%
         unique() %>%
         sort()
     }
-    stillSelected <- isolate(input$zipcodes[input$zipcodes %in% zipcodes])
-    updateSelectizeInput(session, "zipcodes", choices = zipcodes,
+    stillSelected <- isolate(input$systems[input$systems %in% systems])
+    updateSelectizeInput(session, "systems", choices = systems,
       selected = stillSelected, server = TRUE)
   })
 
@@ -207,25 +209,25 @@ function(input, output, session) {
       map <- leafletProxy("map")
       map %>% clearPopups()
       dist <- 0.5
-      zip <- input$goto$zip
+      system <- input$goto$system
       lat <- input$goto$lat
       lng <- input$goto$lng
-      showZipcodePopup(zip, lat, lng)
+      showSitePopup(system, lat, lng)
       map %>% fitBounds(lng - dist, lat - dist, lng + dist, lat + dist)
     })
   })
 
-  output$ziptable <- DT::renderDataTable({
+  output$systable <- DT::renderDataTable({
     df <- cleantable %>%
       filter(
         Score >= input$minScore,
         Score <= input$maxScore,
         is.null(input$states) | State %in% input$states,
         is.null(input$cities) | City %in% input$cities,
-        is.null(input$zipcodes) | Zipcode %in% input$zipcodes
+        is.null(input$systems) | Zipcode %in% input$systems
       ) %>%
-      mutate(Action = paste('<a class="go-map" href="" data-lat="', Lat, '" data-long="', Long, '" data-zip="', Zipcode, '"><i class="fa fa-crosshairs"></i></a>', sep=""))
-    action <- DT::dataTableAjax(session, df, outputId = "ziptable")
+      mutate(Action = paste('<a class="go-map" href="" data-lat="', Lat, '" data-long="', Long, '" data-system="', System, '"><i class="fa fa-crosshairs"></i></a>', sep=""))
+    action <- DT::dataTableAjax(session, df, outputId = "systable")
 
     DT::datatable(df, options = list(ajax = list(url = action)), escape = FALSE)
   })
@@ -239,11 +241,8 @@ library(leaflet)
 
 # Choices for drop-downs
 vars <- c(
-  "Is SuperZIP?" = "superzip",
-  "Centile score" = "centile",
-  "College education" = "college",
-  "Median income" = "income",
-  "Population" = "adultpop"
+  "Treatment" = "treated",
+  "Propensity Score" = "prop_score"
 )
 
 
@@ -297,7 +296,7 @@ navbarPage("REA Stops and Sites", id="nav",
       ),
       column(3,
         conditionalPanel("input.states",
-          selectInput("zipcodes", "Zipcodes", c("All zipcodes"=""), multiple=TRUE)
+          selectInput("systems", "Systems", c("All systems"=""), multiple=TRUE)
         )
       )
     ),
@@ -310,7 +309,7 @@ navbarPage("REA Stops and Sites", id="nav",
       )
     ),
     hr(),
-    DT::dataTableOutput("ziptable")
+    DT::dataTableOutput("systable")
   ),
 
   conditionalPanel("false", icon("crosshair"))
