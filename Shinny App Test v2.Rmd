@@ -23,7 +23,9 @@ readata<- alldata %>%
          EnergyConsump= kwh_per_cc1) %>%
   filter(year==1943) %>%
   filter(!is.na(EnergyConsump), !is.na(min_stop_dist), !is.na(allo_all), !is.na(re_opm), !is.na(state), !is.na(county), !is.na(system)) %>%
-  select(state:system, Lat:allo_all, op_kwh_p, op_kwh_b, op_ccn,    re_opm, re_cpp)
+  select(st_code:system, Lat:allo_all, op_kwh_p, op_kwh_b, op_ccn,    re_opm, re_cpp) %>%
+  select(-state) %>%
+  rename(state= st_code) 
 
 readata$Treat <- ifelse(readata$min_stop_dist<=20, 1, 0)
 
@@ -185,21 +187,6 @@ session$onSessionEnded(clickObs$suspend)
     updateSelectizeInput(session, "systems", choices = systems,
       selected = stillSelected, server = TRUE)
   })
-  
-  observe({
-    if (is.null(input$goto))
-      return()
-    isolate({
-      map$clearPopups()
-      dist <- 0.5
-      sys <- input$goto$sys
-      lat <- input$goto$lat
-      lng <- input$goto$lng
-      showZipcodePopup(sys, lat, lng)
-      map$fitBounds(lat - dist, lng - dist,
-        lat + dist, lng + dist)
-    })
-  })
 
   output$systable <- DT::renderDataTable({
     df <- readata %>%
@@ -207,11 +194,9 @@ session$onSessionEnded(clickObs$suspend)
         is.null(input$states) | state %in% input$states,
         is.null(input$counties) | county %in% input$counties,
         is.null(input$systems) | system %in% input$systems
-      ) %>%
-      mutate(Action = paste('<a class="go-map" href="" data-lat="', Lat, '" data-long="', Long, '" data-sys="', system, '"><i class="fa fa-crosshairs"></i></a>', sep=""))
-    action <- DT::dataTableAjax(session, df, outputId = "systable")
+      )
 
-    DT::datatable(df, options = list(ajax = list(url = action)), escape = FALSE)
+    DT::datatable(df, escape = FALSE)
   })
 })
 ```
@@ -241,7 +226,7 @@ ui <- shinyUI(navbarPage("REA Data", id="nav",
     leafletOutput("map", width="768", height="480"),
 
       # Shiny versions prior to 0.11 should use class = "modal" instead.
-      absolutePanel(id = "controls", class = "modal", fixed = TRUE, draggable = TRUE, top = 60, left = "auto", right = 20, bottom = "auto", width = 330, height = "auto",
+      absolutePanel(id = "controls", class = "panel panel-default", fixed = TRUE, draggable = TRUE, top = 60, left = "auto", right = 20, bottom = "auto", width = 330, height = "auto",
 
         h2("READata explorer"),
 
@@ -261,7 +246,7 @@ ui <- shinyUI(navbarPage("REA Data", id="nav",
   tabPanel("Data explorer",
     fluidRow(
       column(3,
-        selectInput("states", "States", c("All states"="", structure(state.abb, names=state.name), "Washington, DC"="DC"), multiple=TRUE)
+        selectInput("states", "States", c("All states"="", structure(state.abb, names=state.name)), multiple=TRUE)
       ),
       column(3,
         conditionalPanel("input.states",
