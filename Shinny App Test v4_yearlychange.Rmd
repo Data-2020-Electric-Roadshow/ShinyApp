@@ -313,6 +313,9 @@ ui <- shinyUI(navbarPage("REA Data", id="nav",
         
         plotOutput("histEnergy", height = 200),
         plotOutput("scatterStopEnergy", height = 250)
+      ),
+      tags$div(id="cite",
+        'Note:', '(1) propensity score is estimated using 20 miles as threshold;', tags$br(), '(2) energy consumption data in 1938-1940 use different measure with later years.', tags$em('Please refer to README file for details.')
       )
     )
   ),
@@ -342,6 +345,17 @@ ui <- shinyUI(navbarPage("REA Data", id="nav",
     ),
     hr(),
     DT::dataTableOutput("systable")
+  ),
+  
+  tabPanel("README",
+          tags$h2("README before using the app"), tags$br(), 
+          tags$h4("This is achivement of 2020 Duke University Data+ Program."), tags$br(), 
+          tags$h5('Our project name is "Taking electrification on the road: Exploring the impact of the Electric Farm Equipment roadshow". For the ouline of our project, please visit:'),
+          tags$a(href="https://bigdata.duke.edu/projects/taking-electrification-road-exploring-impact-electric-farm-equipment-roadshow", "Here"),
+          tags$h5("Thanks for guidance of project leader Victoria Plutshack, Jonathon Free, Robert Fetter. Also, thanks for project manager William Neiver and David Buch. Work is jointly accomplished by Franco Picone, Tri Truong, and Zhihao Han."),
+          tags$h5("We collect the data by scraping annual statistical report published by rural electrification administration (REA) from 1941 to 1946. This report provides detailed data about allotment, construction, operation and loan payment for each REA borrower. Full dataset, detailed description, and shinyapp code can be downloaded at:"),
+          tags$a(href="https://github.com/zhihaomax/Rural-Electrification-Dataset", "Here")
+          
   ),
 
   conditionalPanel("false", icon("crosshair"))
